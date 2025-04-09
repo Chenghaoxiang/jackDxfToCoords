@@ -2,10 +2,10 @@ import os
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QUrl
 from PyQt5.QtGui import (QIcon, QFont, QColor,
                          QPainter, QLinearGradient,
-                         QImage, QPixmap)
+                         QImage, QPixmap, QDesktopServices)
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout,
                              QFormLayout, QHBoxLayout, QLabel,
                              QComboBox, QLineEdit, QPushButton,
@@ -142,7 +142,8 @@ class MyWindow(QWidget):
             shape = next((name for name, member in SHAPE.__members__.items() if member.value == id), None)
 
             filepath = self.edit_dxf.text()
-            output_file = self.edit_excel.text() + f"/{shape}.xlsx"
+            out_dir = self.edit_excel.text()
+            output_file = out_dir + f"\\{shape}.xlsx"
             print(output_file)
 
             returnId = export_shape_polar_to_excel(shape, filepath, output_file)
@@ -153,17 +154,20 @@ class MyWindow(QWidget):
                 QMessageBox.critical(
                     self,
                     '操作失败',
-                    f'并不是选择的{shape}图形，而是{ShapeErrorName}图形\n请选择{ShapeErrorName}图形',
+                    f'并不是选择的{shape}图形，而是{ShapeErrorName}图形\n请选择{ShapeErrorName}图形,如果图形复杂请选择复合线段',
                     QMessageBox.Ok
                 )
 
             if returnId == 1:
-                QMessageBox.information(
+                reply = QMessageBox.information(
                     self,
                     '操作成功',
                     f'文件已成功生成！\n文件位置:{filepath}',
-                    QMessageBox.Ok
+                    QMessageBox.Open,
+                    QMessageBox.Close
                 )
+                if reply == QMessageBox.Open:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
         except Exception as e:
             print(e)
             # 生成失败提示
