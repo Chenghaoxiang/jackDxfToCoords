@@ -55,12 +55,7 @@ class MyWindow(QWidget):
         # 图形类别选择
         self.combo_graph = AnimatedComboBox()
         self.combo_graph.setIconSize(QSize(24, 24))
-        self.btn_reset = GlowButton("重置", icon_path="_internal/resource/reset.svg")
-        animation = QPropertyAnimation(self.btn_reset, b"geometry")
-        animation.setDuration(300)  # 动画时长 300ms
-        animation.setEasingCurve(QEasingCurve.OutQuad)  # 缓动效果
-        #btn_excel.clicked.connect(lambda:)
-        form_layout.addRow(self.create_file_row(FormLabel("图形类型："), self.combo_graph, self.btn_reset))
+        form_layout.addRow(FormLabel("图形类型："), self.combo_graph)
 
         self.edit_dxf = HighlightLineEdit()
         if getattr(sys, 'frozen', False):
@@ -68,20 +63,6 @@ class MyWindow(QWidget):
             # pdf_path = f"{app_dir}/resource/1.pdf"
         else:
             app_dir = Path(__file__).parent
-
-        # 添加第二个输入行: 角度选择和取点个数
-        numberOfDegrees = HighlightLineEdit()
-        numberOfPoint = HighlightLineEdit()
-
-        # 创建一个水平布局来包含角度选择和取点个数
-        horizontal_layout = QHBoxLayout()
-        horizontal_layout.addWidget(FormLabel("角度选择:"))
-        horizontal_layout.addWidget(numberOfDegrees)
-        horizontal_layout.addWidget(FormLabel("取点个数:"))
-        horizontal_layout.addWidget(numberOfPoint)
-
-        # 将水平布局添加到表单布局中
-        form_layout.addRow(horizontal_layout)
 
         # DXF文件选择
         self.edit_dxf = HighlightLineEdit()
@@ -91,14 +72,14 @@ class MyWindow(QWidget):
         animation.setDuration(300)  # 动画时长 300ms
         animation.setEasingCurve(QEasingCurve.OutQuad)  # 缓动效果
         btn_dxf.clicked.connect(lambda: self.select_file(self.edit_dxf, "打开DXF文件", "*.dxf"))
-        form_layout.addRow(self.create_file_row(FormLabel("DXF位置："),self.edit_dxf, btn_dxf))
+        form_layout.addRow(FormLabel("DXF文件位置："), self.create_file_row(self.edit_dxf, btn_dxf))
 
         # Excel导出位置
         self.edit_excel = HighlightLineEdit()
         self.edit_excel.setText(f"{app_dir}\\out_file")
         btn_excel = GlowButton("浏览", icon_path="_internal/resource/folder_icon.svg")
         btn_excel.clicked.connect(lambda: self.save_directory(self.edit_excel))
-        form_layout.addRow(self.create_file_row(FormLabel("导出位置："),self.edit_excel, btn_excel))
+        form_layout.addRow(FormLabel("导出位置："), self.create_file_row(self.edit_excel, btn_excel))
 
         main_layout.addLayout(form_layout)
 
@@ -110,12 +91,11 @@ class MyWindow(QWidget):
         self.setLayout(main_layout)
         self.apply_shadows()
 
-    def create_file_row(self,label, edit, btn):
+    def create_file_row(self, edit, btn):
         container = QWidget()
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(20)
-        layout.addWidget(label)
         layout.addWidget(edit)
         layout.addWidget(btn)
         container.setLayout(layout)
