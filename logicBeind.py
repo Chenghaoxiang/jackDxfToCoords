@@ -24,7 +24,7 @@ class SHAPE(Enum):
 
 
 
-def export_shape_polar_to_excel(shape,dxf_path, output_excel,min_val,max_val,pointNum):
+def export_shape_polar_to_excel(shape,dxf_path, output_excel,pointNum):
     # 读取 DXF 文件
     doc = ezdxf.readfile(dxf_path)
     msp = doc.modelspace()

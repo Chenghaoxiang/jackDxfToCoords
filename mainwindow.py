@@ -165,37 +165,13 @@ class MyWindow(QWidget):
             output_file = out_dir + f"\\{shape}.xlsx"
             print(output_file)
 
-            degreesName = self.numberOfDegrees.text()
             pointName = self.numberOfPoints.text()
-
-            input_str = degreesName
-            match = re.match(r'^(\d+)-(\d+)$', str(input_str).strip())
-
-            if match:
-                min_val = int(match.group(1))  # 0
-                max_val = int(match.group(2))  # 180
-                if min_val > max_val or min_val == max_val:
-                    QMessageBox.critical(
-                        self,
-                        f'{min_val} > {max_val} 或 {min_val} == {max_val}',
-                        '错误信息：请正确填写输入角度范围\n正确填写示例: "0-180"',
-                        QMessageBox.Cancel
-                    )
-            else:
-                QMessageBox.critical(
-                    self,
-                    '正则提取失败',
-                    '错误信息：请正确填写输入角度\n正确填写示例: "0-180"',
-                    QMessageBox.Cancel
-                )
-                return 0
 
             pointNum = int(pointName.strip())
 
-            print(degreesName)
             print(pointName)
 
-            returnId = export_shape_polar_to_excel(shape, filepath, output_file,min_val,max_val,pointNum)
+            returnId = export_shape_polar_to_excel(shape, filepath, output_file,pointNum)
 
             if returnId < 0:
                 ShapeErrorid = -returnId;
