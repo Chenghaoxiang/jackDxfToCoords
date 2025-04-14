@@ -1,7 +1,10 @@
 import os
+import re
 import sys
+from math import degrees
 from pathlib import Path
 
+import ezdxf
 from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QUrl
 from PyQt5.QtGui import (QIcon, QFont, QColor,
                          QPainter, QLinearGradient,
@@ -10,10 +13,10 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout,
                              QFormLayout, QHBoxLayout, QLabel,
                              QComboBox, QLineEdit, QPushButton,
                              QFileDialog, QGraphicsDropShadowEffect,
-                             QSizePolicy, QMessageBox)
-from openpyxl.pivot.fields import Number
+                             QSizePolicy, QMessageBox, QScrollArea)
 
 from logicBeind import export_shape_polar_to_excel, SHAPE
+from viewFile import analyze_dxf
 
 
 class MyWindow(QWidget):
@@ -69,19 +72,14 @@ class MyWindow(QWidget):
         else:
             app_dir = Path(__file__).parent
 
-        # 添加第二个输入行: 角度选择和取点个数
-        numberOfDegrees = HighlightLineEdit()
-        numberOfPoint = HighlightLineEdit()
-
-        # 创建一个水平布局来包含角度选择和取点个数
-        horizontal_layout = QHBoxLayout()
-        horizontal_layout.addWidget(FormLabel("角度选择:"))
-        horizontal_layout.addWidget(numberOfDegrees)
-        horizontal_layout.addWidget(FormLabel("取点个数:"))
-        horizontal_layout.addWidget(numberOfPoint)
+        # 添加第二个输入行: 取点个数和查看文件信息
+        # self.numberOfDegrees = HighlightLineEdit()
+        self.numberOfPoints = HighlightLineEdit()
+        self.btn_viewFile = FloatButton(QIcon("_internal/resource/file_data.svg"), " 查看文件信息", self)
+        self.btn_viewFile.clicked.connect(self.show_result)
 
         # 将水平布局添加到表单布局中
-        form_layout.addRow(horizontal_layout)
+        form_layout.addRow(self.create_file_row(FormLabel("取点个数:"), self.numberOfPoints, self.btn_viewFile))
 
         # DXF文件选择
         self.edit_dxf = HighlightLineEdit()
@@ -166,7 +164,37 @@ class MyWindow(QWidget):
             output_file = out_dir + f"\\{shape}.xlsx"
             print(output_file)
 
-            returnId = export_shape_polar_to_excel(shape, filepath, output_file)
+            degreesName = self.numberOfDegrees.text()
+            pointName = self.numberOfPoints.text()
+
+            input_str = degreesName
+            match = re.match(r'^(\d+)-(\d+)$', str(input_str).strip())
+
+            if match:
+                min_val = int(match.group(1))  # 0
+                max_val = int(match.group(2))  # 180
+                if min_val > max_val or min_val == max_val:
+                    QMessageBox.critical(
+                        self,
+                        f'{min_val} > {max_val} 或 {min_val} == {max_val}',
+                        '错误信息：请正确填写输入角度范围\n正确填写示例: "0-180"',
+                        QMessageBox.Cancel
+                    )
+            else:
+                QMessageBox.critical(
+                    self,
+                    '正则提取失败',
+                    '错误信息：请正确填写输入角度\n正确填写示例: "0-180"',
+                    QMessageBox.Cancel
+                )
+                return 0
+
+            pointNum = int(pointName.strip())
+
+            print(degreesName)
+            print(pointName)
+
+            returnId = export_shape_polar_to_excel(shape, filepath, output_file,min_val,max_val,pointNum)
 
             if returnId < 0:
                 ShapeErrorid = -returnId;
@@ -198,6 +226,28 @@ class MyWindow(QWidget):
                 QMessageBox.Ok
             )
 
+    def show_result(self):
+        """按钮点击处理函数"""
+        filepath = self.edit_dxf.text()
+        result = analyze_dxf(filepath)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("DXF分析结果")
+        # 创建滚动区域
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)  # 允许内容自适应大小
+
+        # 创建内部标签并设置长文本
+        content = QLabel(result)
+        content.setWordWrap(True)  # 启用自动换行
+        scroll.setWidget(content)
+
+        # 设置滚动区域的最小尺寸（避免窗口过小）
+        scroll.setMinimumSize(400, 300)  # 可根据需求调整
+
+        # 将滚动区域添加到QMessageBox
+        msg.layout().addWidget(scroll, 0, 1)  # 替换原QLabel位置
+        msg.exec_()
 
 # 自定义控件类
 class FormLabel(QLabel):
@@ -350,6 +400,7 @@ class AnimatedComboBox(QComboBox):
         self.addItem(QIcon("_internal/resource/arc_icon.svg"), "圆弧(ARC)")
         self.addItem(QIcon("_internal/resource/polyline_icon.svg"), "多边形(POLYLINE)")
         self.addItem(QIcon("_internal/resource/lwpolyline_icon.svg"), "多段线(LWPOLYLINE)")
+        self.addItem(QIcon("_internal/resource/lwpolyline_icon.svg"), "样条线-光滑曲线(SPLINE)")
         self.addItem(QIcon("_internal/resource/composite_icon.svg"), "复合线段(composite)")
 
 

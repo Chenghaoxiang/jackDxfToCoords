@@ -5,7 +5,7 @@ import pandas as pd
 import ezdxf
 
 from shapeLogic import shape_circle, shape_rectangle, shape_ellipse, shape_line, shape_arc, shape_polyline, \
-    shape_lwpolyline, shape_composite
+    shape_composite, shape_spline, shape_lwpolyline
 
 
 class SHAPE(Enum):
@@ -16,14 +16,15 @@ class SHAPE(Enum):
     ARC = 5             #弧形
     POLYLINE = 6        #多边形
     LWPOLYLINE = 7      #多段线
-    composite = 8       #复合线段，不一定闭合，就是由line或者arc这些拼接来的
+    SPLINE = 8
+    composite = 9       #复合线段，不一定闭合，就是由line或者arc这些拼接来的
     POINT = 9           #点
     TEXT = 10
     DIMENSION = 11      #尺寸标注
 
 
 
-def export_shape_polar_to_excel(shape,dxf_path, output_excel):
+def export_shape_polar_to_excel(shape,dxf_path, output_excel,min_val,max_val,pointNum):
     # 读取 DXF 文件
     doc = ezdxf.readfile(dxf_path)
     msp = doc.modelspace()
@@ -63,13 +64,15 @@ def export_shape_polar_to_excel(shape,dxf_path, output_excel):
             shape_polyline(data, entity)
         case SHAPE.LWPOLYLINE.name:
             shape_lwpolyline(msp, data)
+        case SHAPE.SPLINE.name:
+            shape_spline(dxf_path,data)
         case SHAPE.composite.name:
             shape_composite(msp, data)
 
     # 创建 DataFrame 并保存为 Excel
-    df = pd.DataFrame(data)
-    df.to_excel(output_excel, index=False)
-    print(f"数据已保存到 {output_excel}")
+    # df = pd.DataFrame(data)
+    # df.to_excel(output_excel, index=False)
+    # print(f"数据已保存到 {output_excel}")
     return 1
 
 # 直接使用
