@@ -58,11 +58,12 @@ class MyWindow(QWidget):
         # 图形类别选择
         self.combo_graph = AnimatedComboBox()
         self.combo_graph.setIconSize(QSize(24, 24))
-        self.btn_reset = GlowButton("重置", icon_path="_internal/resource/reset.svg")
+        self.btn_reset = GlowButton("重置", icon_path="_internal/resource/reset_icon.svg")
         animation = QPropertyAnimation(self.btn_reset, b"geometry")
         animation.setDuration(300)  # 动画时长 300ms
         animation.setEasingCurve(QEasingCurve.OutQuad)  # 缓动效果
-        # btn_excel.clicked.connect(lambda:)
+        self.btn_reset.clicked.connect(lambda: self.reset())
+
         form_layout.addRow(self.create_file_row(FormLabel("图形类型："), self.combo_graph, self.btn_reset))
 
         self.edit_dxf = HighlightLineEdit()
@@ -225,6 +226,12 @@ class MyWindow(QWidget):
                 f'错误信息：{str(e)}',
                 QMessageBox.Ok
             )
+
+    def reset(self):
+        self.numberOfPoints.clear()
+        self.edit_dxf.clear()
+        self.edit_excel.clear()
+        self.combo_graph.setCurrentIndex(0)
 
     def show_result(self):
         """按钮点击处理函数"""
