@@ -326,7 +326,9 @@ class FloatButton(QPushButton):
                 font-weight: 500;
             }
         """)
+        self.default_geometry = None  # 新增：保存初始尺寸
         self.setup_animation()
+
 
     def setup_animation(self):
         self.animation = QPropertyAnimation(self, b"geometry")
@@ -335,16 +337,28 @@ class FloatButton(QPushButton):
         self.hover_animation = QPropertyAnimation(self, b"geometry")
         self.hover_animation.setDuration(300)
 
+    def showEvent(self, event):
+        """在首次显示时记录初始尺寸"""
+        super().showEvent(event)
+        if self.default_geometry is None:
+            self.default_geometry = self.geometry()
+
     def enterEvent(self, event):
+        if self.default_geometry is None:   #处理异常
+            return
+
         self.hover_animation.stop()
         self.hover_animation.setStartValue(self.geometry())
         self.hover_animation.setEndValue(self.geometry().adjusted(-4, -4, 4, 4))
         self.hover_animation.start()
 
     def leaveEvent(self, event):
+        if self.default_geometry is None:   #处理异常
+            return
+
         self.hover_animation.stop()
         self.hover_animation.setStartValue(self.geometry())
-        self.hover_animation.setEndValue(self.geometry().adjusted(4, 4, -4, -4))
+        self.hover_animation.setEndValue(self.default_geometry)
         self.hover_animation.start()
 
 
