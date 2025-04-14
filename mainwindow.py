@@ -400,7 +400,7 @@ class AnimatedComboBox(QComboBox):
         self.addItem(QIcon("_internal/resource/arc_icon.svg"), "圆弧(ARC)")
         self.addItem(QIcon("_internal/resource/polyline_icon.svg"), "多边形(POLYLINE)")
         self.addItem(QIcon("_internal/resource/lwpolyline_icon.svg"), "多段线(LWPOLYLINE)")
-        self.addItem(QIcon("_internal/resource/lwpolyline_icon.svg"), "样条线-光滑曲线(SPLINE)")
+        self.addItem(QIcon("_internal/resource/spline_icon.svg"), "样条线-光滑曲线(SPLINE)")
         self.addItem(QIcon("_internal/resource/composite_icon.svg"), "复合线段(composite)")
 
 
