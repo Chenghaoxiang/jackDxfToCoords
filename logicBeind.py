@@ -35,9 +35,13 @@ def export_shape_polar_to_excel(shape,dxf_path, output_excel,pointNum):
         if entitys.dxftype() == shape:
             entity = entitys
             break
+        elif shape == SHAPE.RECTANGLE.name:
+            entity = 1  # 非空就行跳过下面的判断
+            break
         elif shape == SHAPE.composite.name:
             entity = 1 #非空就行跳过下面的判断
             break
+
 
     if not entity:
         print("未找到对应的图形实体")
@@ -51,28 +55,28 @@ def export_shape_polar_to_excel(shape,dxf_path, output_excel,pointNum):
 
     match shape:
         case SHAPE.CIRCLE.name:
-            shape_circle(data,entity)
+            shape_circle(msp,data,pointNum)
         case SHAPE.RECTANGLE.name:
-            shape_rectangle(data, entity)
+            shape_rectangle(msp,data,pointNum)
         case SHAPE.ELLIPSE.name:
-            shape_ellipse(data,entity)
+            shape_ellipse(data,entity,pointNum)
         case SHAPE.LINE.name:
-            shape_line(data,entity)
+            shape_line(data,entity,pointNum)
         case SHAPE.ARC.name:
-            shape_arc(data, entity)
+            shape_arc(data, msp,pointNum)
         case SHAPE.POLYLINE.name:
-            shape_polyline(data, entity)
+            shape_polyline(data, msp,pointNum)
         case SHAPE.LWPOLYLINE.name:
-            shape_lwpolyline(msp, data)
+            shape_lwpolyline(msp, data,pointNum)
         case SHAPE.SPLINE.name:
-            shape_spline(dxf_path,data)
+            shape_spline(dxf_path,data,pointNum)
         case SHAPE.composite.name:
             shape_composite(msp, data)
 
     # 创建 DataFrame 并保存为 Excel
-    # df = pd.DataFrame(data)
-    # df.to_excel(output_excel, index=False)
-    # print(f"数据已保存到 {output_excel}")
+    df = pd.DataFrame(data)
+    df.to_excel(output_excel, index=False)
+    print(f"数据已保存到 {output_excel}")
     return 1
 
 # 直接使用

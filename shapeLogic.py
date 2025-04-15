@@ -3,99 +3,127 @@ import math
 import ezdxf
 import numpy as np
 import pandas as pd
+import bisect
+from ezdxf.math import Vec2
 from scipy.interpolate import interp1d,BSpline
 
 
-def shape_circle(data,entity):
-    # 提取圆参数
-    cx, cy, cz = entity.dxf.center  # 中心坐标（绝对位置）
-    radius = entity.dxf.radius  # 圆的半径
+def shape_circle(msp,data,pointNum):
+    for entity in msp:
+        if entity.dxftype == "CIRCLE":
+            # 提取圆参数
+            cx, cy, cz = entity.dxf.center  # 中心坐标（绝对位置）
+            radius = entity.dxf.radius  # 圆的半径
+            # 计算每个点的角度（弧度）
+            angle_step = math.radians(360.0 / pointNum)
 
-    # 生成每个角度的数据
-    for theta_deg in range(0, 360):
-        theta_rad = math.radians(theta_deg)
+            # 生成等分点坐标
+            for i in range(pointNum):
+                theta = i * angle_step
+                x = cx + radius * math.cos(theta)
+                y = cy + radius * math.sin(theta)
 
-        # 直接计算笛卡尔坐标（圆无需旋转或比例变换）
-        x = cx + radius * math.cos(theta_rad)
-        y = cy + radius * math.sin(theta_rad)
+                # 将点坐标添加到data列表
+                data.append({
+                    "角度(度)": theta,
+                    "距离": round(radius, 6),  # 恒定半径
+                    "X坐标": round(x, 6),
+                    "Y坐标": round(y, 6),
+                })
+            # 第一个圆输出完就可以了
+            break
 
-        data.append({
-            "角度(度)": theta_deg,
-            "距离": round(radius, 6),  # 恒定半径
-            "X坐标": round(x, 6),
-            "Y坐标": round(y, 6),
-        })
+def shape_rectangle(msp,data,pointNum):
+    rectangle_datas = []
+    entity = None
+    for entitys in msp:
+        print(f"dxftype = {entitys.dxftype},closed={entitys.closed},len={len(entitys)}")
+        if entitys.dxftype() == 'LWPOLYLINE' and entitys.closed and len(entitys) == 4:
+            entity = entitys
+            break
 
-def shape_rectangle(data,entity):
-    points = list(entity.vertices())
-    # 计算每条边的长度
-    lengths = [
-        math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]),  # 边1
-        math.hypot(points[2][0] - points[1][0], points[2][1] - points[1][1]),  # 边2
-        math.hypot(points[3][0] - points[2][0], points[3][1] - points[2][1]),  # 边3
-        math.hypot(points[0][0] - points[3][0], points[0][1] - points[3][1]),  # 边4
-    ]
+    if entity is None:
+        data = []
+    else:
+        # 获取顶点坐标（转换为二维点）
+        vertices = [(v[0], v[1]) for v in entity.vertices()]
 
-    # 找出最长边和最短边
-    long_edge_length = max(lengths)
-    short_edge_length = min(lengths)
+        # 计算包围盒参数
+        x_coords = [x for x, _ in vertices]
+        y_coords = [y for _, y in vertices]
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        center = ((x_min + x_max) / 2, (y_min + y_max) / 2)
 
-    # 根据长短边的长度赋值
-    if lengths[0] == long_edge_length or lengths[2] == long_edge_length:  # 边1或边3是长边
-        a = long_edge_length / 2  # 长边
-        b = short_edge_length / 2  # 短边
-    else:  # 边2或边4是长边
-        a = long_edge_length / 2  # 长边
-        b = short_edge_length / 2  # 短边
+        # 角度等分参数
+        angle_step = 360.0 / pointNum
 
-    # 计算中心坐标
-    cx = sum(p[0] for p in points) / 4
-    cy = sum(p[1] for p in points) / 4
+        # 遍历每个角度
+        for i in range(pointNum):
+            theta_deg = i * angle_step
+            theta = math.radians(theta_deg)
 
-    # 计算旋转角度(phi)
-    dx = points[1][0] - points[0][0]
-    dy = points[1][1] - points[0][1]
-    phi = math.atan2(dy, dx)
+            # 射线方向单位向量
+            dx = math.cos(theta)
+            dy = math.sin(theta)
 
-    # 生成每个角度的数据（360个点）
-    data = []
-    for theta_deg in range(0, 360):
-        theta_rad = math.radians(theta_deg)
-        theta_rel = theta_rad - phi  # 转换为局部坐标系角度
+            min_t = float('inf')
+            intersect = None
 
-        # 计算局部坐标系中的极径（矩形边界交点）
-        cos_theta = math.cos(theta_rel)
-        sin_theta = math.sin(theta_rel)
+            # 检查四边交点（轴对齐版）
+            # 右边（x_max）
+            if abs(dx) > 1e-9:
+                t = (x_max - center[0]) / dx
+                if t > 0:
+                    y = center[1] + dy * t
+                    if y_min <= y <= y_max and t < min_t:
+                        min_t = t
+                        intersect = (x_max, y)
 
-        if abs(cos_theta) < 1e-9:  # 避免除以零
-            r_local = b / abs(sin_theta) if sin_theta != 0 else 0
-        elif abs(sin_theta) < 1e-9:
-            r_local = a / abs(cos_theta) if cos_theta != 0 else 0
-        else:
-            r_x = a / abs(cos_theta)  # x方向最大延伸
-            r_y = b / abs(sin_theta)  # y方向最大延伸
-            r_local = min(r_x, r_y)  # 取较小值确保在边界内
+            # 左边（x_min）
+            if abs(dx) > 1e-9:
+                t = (x_min - center[0]) / dx
+                if t > 0:
+                    y = center[1] + dy * t
+                    if y_min <= y <= y_max and t < min_t:
+                        min_t = t
+                        intersect = (x_min, y)
 
-        # 计算局部坐标并旋转回全局坐标系
-        x_local = r_local * cos_theta
-        y_local = r_local * sin_theta
-        x_rot = x_local * math.cos(phi) - y_local * math.sin(phi)
-        y_rot = x_local * math.sin(phi) + y_local * math.cos(phi)
+            # 上边（y_max）
+            if abs(dy) > 1e-9:
+                t = (y_max - center[1]) / dy
+                if t > 0:
+                    x = center[0] + dx * t
+                    if x_min <= x <= x_max and t < min_t:
+                        min_t = t
+                        intersect = (x, y_max)
 
-        # 将结果转换为全局坐标
-        x = cx + x_rot
-        y = cy + y_rot
+            # 下边（y_min）
+            if abs(dy) > 1e-9:
+                t = (y_min - center[1]) / dy
+                if t > 0:
+                    x = center[0] + dx * t
+                    if x_min <= x <= x_max and t < min_t:
+                        min_t = t
+                        intersect = (x, y_min)
 
-        # 添加结果到数据列表
-        data.append({
-            "角度(度)": theta_deg,
-            "距离": round(math.hypot(x - cx, y - cy), 6),
-            "X坐标": round(x, 6),
-            "Y坐标": round(y, 6),
-        })
+            if intersect:
+                # data.append((round(, 2), round(, 2)))
+                x = intersect[0]
+                y = intersect[1]
+                angle = math.atan2(y, x) % 360
+                data.append({
+                    "角度(度)": angle,
+                    "距离": math.sqrt(x ** 2 + y ** 2),
+                    "X坐标": round(x, 6),
+                    "Y坐标": round(y, 6),
+                })
+                # print(datas)
+    data.sort(key = lambda item:item["角度(度)"])
+    print(data)
         # 现在 data 包含每个角度下的坐标和距离信息
 
-def shape_ellipse(data,entity):
+def shape_ellipse(data,entity,pointNum):
     # 提取椭圆参数
     cx, cy, cz = entity.dxf.center  # 中心坐标
     dx, dy, dz = entity.dxf.major_axis  # 长轴向量（相对于中心）
@@ -104,9 +132,9 @@ def shape_ellipse(data,entity):
     ratio = entity.dxf.ratio  # 短轴比例
     b = a * ratio  # 短轴长度
 
-    # 生成每个角度的数据
-    # data = []
-    for theta_deg in range(0, 360):
+    # 按角度均匀生成点
+    for i in range(pointNum):
+        theta_deg = i * 360.0 / pointNum  # 当前角度（度）
         theta_rad = math.radians(theta_deg)
         theta_rel = theta_rad - phi  # 相对于椭圆旋转的角度
 
@@ -119,13 +147,14 @@ def shape_ellipse(data,entity):
         y = cy + r * math.sin(theta_rad)
 
         data.append({
-            "角度(度)": theta_deg,
+            "角度(度)": round(theta_deg, 6),  # 保留6位小数
             "距离": round(r, 6),
-            "X坐标": round(x, 6),  # 保留6位小数
+            "X坐标": round(x, 6),
             "Y坐标": round(y, 6),
         })
+    data.sort(key=lambda item:item["角度(度)"])
 
-def shape_line(data,entity):
+def shape_line(data,entity,pointNum):
     start_point = entity.dxf.start  # 获取起始点
     end_point = entity.dxf.end  # 获取终止点
 
@@ -134,7 +163,7 @@ def shape_line(data,entity):
     end_x, end_y, end_z = end_point
 
     # 计算每个点需要的增量
-    num_points = 360
+    num_points = pointNum
     delta_x = (end_x - start_x) / (num_points - 1)
     delta_y = (end_y - start_y) / (num_points - 1)
     #二维不需要z轴坐标
@@ -145,166 +174,426 @@ def shape_line(data,entity):
         result_x = start_x + i * delta_x
         result_y = start_y + i * delta_y
         #result_z = start_z + i * delta_z
+        angle = math.atan2(result_y , result_x)       #求的是对于零点的坐标
+        deg = math.degrees(angle)
+        if deg < 0:
+            deg += 360
         data.append({
+            "角度(度)": round(deg, 6),  # 保留6位小数
+            "距离": round(math.sqrt(result_x ** 2 + result_y **2), 6),
             "x轴坐标": round(result_x,6),
             "y轴坐标": round(result_y,6),
         })
+    data.sort(key=lambda item:item["角度(度)"])
 
-def shape_arc(data, entity):
-    #获取圆心的坐标
-    center_x = entity.dxf.center_x
-    center_y = entity.dxf.center_y
-    center_z = entity.dxf.center_z
+def shape_arc(data, msp,pointNum):
 
-    #获取半径
-    radius = entity.dxf.radius
+    arcs = []
+    for entity in msp:
+        if entity.dxftype() == "ARC":
+            arcs.append(entity)
+    arc_num = len(arcs)
+    if arc_num == 0:
+        return []  # 没有ARC时返回空列表
 
-    #获取起始角度和结束角度
-    start_angle = entity.dxf.start_angle
-    end_angle = entity.dxf.end_angle
+    base = pointNum // arc_num
+    rem = pointNum % arc_num
+    points_info = []
 
-    # 计算每个点需要的增量
-    num_points = 360
+    for i, arc in enumerate(arcs):
+        if i < rem:
+            n = base + 1
+        else:
+            n = base
 
-    # 计算角度增量
-    angle_increment = (end_angle - start_angle) / (num_points - 1)
+        if n <= 0:
+            continue
 
-    # 计算每个点的坐标和角度
-    for i in range(num_points):
-        # 计算当前角度
-        current_angle = start_angle + i * angle_increment
+        center = arc.dxf.center  # 圆心 (x, y, z)
+        radius = arc.dxf.radius
+        start_angle = arc.dxf.start_angle
+        end_angle = arc.dxf.end_angle
 
-        # 将角度转换为弧度
-        radians = math.radians(current_angle)
+        # 计算总角度delta
+        delta = (end_angle - start_angle) % 360
+        if delta == 0:
+            delta = 360  # 处理完整的圆
 
-        # 计算 x 和 y 坐标
-        x = center_x + radius * math.cos(radians)
-        y = center_y + radius * math.sin(radians)
+        # 生成角度列表
+        if n == 1:
+            angles = [(start_angle + delta / 2) % 360]
+        else:
+            angle_step = delta / (n - 1)
+            angles = [(start_angle + i * angle_step) % 360 for i in range(n)]
 
-        # 将结果存储到 data 列表中
-        data.append({
-            "角度": round(current_angle,6),
-            "距离": round(radius,6),
-            "x坐标": round(x,6),
-            "y坐标": round(y,6),
+        # 计算每个点的坐标和角度、半径
+        for theta_deg in angles:
+            theta_rad = math.radians(theta_deg)
+            x = center[0] + radius * math.cos(theta_rad)
+            y = center[1] + radius * math.sin(theta_rad)
+            z = center[2]  # 保持z坐标与圆心一致
+
+            angle = math.atan2(y, x)  # 求的是对于零点的坐标
+            deg = math.degrees(angle)
+            if deg < 0:
+                deg += 360
+
+            # 将结果存储到 data 列表中
+            data.append({
+                "圆心角度": round(theta_deg,6),
+                "圆心距离": round(radius,6),
+                "零点角度":deg,
+                "零点距离":math.sqrt(x ** 2 + y ** 2),
+                "x坐标": round(x,6),
+                "y坐标": round(y,6),
+            })
+
+
+def shape_polyline(data,msp,pointNum):
+    # 收集所有多段线实体
+    polylines = []
+    for entity in msp:
+        if entity.dxftype() in ['LWPOLYLINE', 'POLYLINE']:
+            polylines.append(entity)
+
+    if not polylines:
+        return []
+
+    # 计算每个多段线的长度
+    pl_lengths = []
+    for pl in polylines:
+        vertices = []
+        is_closed = False
+
+        if pl.dxftype() == 'LWPOLYLINE':
+            # 处理轻量多段线
+            lw_points = pl.get_points('xy')
+            vertices = [(p[0], p[1]) for p in lw_points]
+            is_closed = pl.closed
+        else:
+            # 处理旧式多段线
+            vertices = []
+            for vertex in pl.vertices():
+                loc = vertex.dxf.location
+                vertices.append((loc.x, loc.y))
+            is_closed = pl.is_closed
+
+        # 计算多段线长度
+        length = 0.0
+        if len(vertices) < 2:
+            pl_lengths.append(0.0)
+            continue
+
+        prev = vertices[0]
+        for curr in vertices[1:]:
+            dx = curr[0] - prev[0]
+            dy = curr[1] - prev[1]
+            length += math.hypot(dx, dy)
+            prev = curr
+
+        # 处理闭合线段
+        if is_closed and len(vertices) >= 2:
+            dx = vertices[0][0] - vertices[-1][0]
+            dy = vertices[0][1] - vertices[-1][1]
+            length += math.hypot(dx, dy)
+
+        pl_lengths.append(length)
+
+    total_length = sum(pl_lengths)
+    if total_length <= 0:
+        return []
+
+    # 分配点数
+    fractions = [(length / total_length) * pointNum for length in pl_lengths]
+    allocations = [math.floor(f) for f in fractions]
+    remainders = [f - a for f, a in zip(fractions, allocations)]
+    remaining = pointNum - sum(allocations)
+
+    # 分配剩余的点数
+    indexed_remainders = sorted(enumerate(remainders), key=lambda x: -x[1])
+    for i in range(remaining):
+        if i < len(indexed_remainders):
+            idx = indexed_remainders[i][0]
+            allocations[idx] += 1
+
+    # 收集所有点
+    all_points = []
+
+    for pl, pl_len, num_points in zip(polylines, pl_lengths, allocations):
+        if num_points <= 0:
+            continue
+
+        # 提取顶点和闭合状态
+        if pl.dxftype() == 'LWPOLYLINE':
+            vertices = [(p[0], p[1]) for p in pl.get_points('xy')]
+            is_closed = pl.closed
+        else:
+            vertices = [(v.dxf.location.x, v.dxf.location.y) for v in pl.vertices()]
+            is_closed = pl.is_closed
+
+        if len(vertices) < 1:
+            continue
+
+        # 构建线段和累积长度
+        segments = []
+        cumulative = [0.0]
+        current_len = 0.0
+        prev = vertices[0]
+
+        for curr in vertices[1:]:
+            dx = curr[0] - prev[0]
+            dy = curr[1] - prev[1]
+            seg_len = math.hypot(dx, dy)
+            segments.append((prev, curr, seg_len))
+            current_len += seg_len
+            cumulative.append(current_len)
+            prev = curr
+
+        # 处理闭合线段
+        if is_closed and len(vertices) >= 2:
+            dx = vertices[0][0] - vertices[-1][0]
+            dy = vertices[0][1] - vertices[-1][1]
+            seg_len = math.hypot(dx, dy)
+            segments.append((vertices[-1], vertices[0], seg_len))
+            current_len += seg_len
+            cumulative.append(current_len)
+
+        total_len = current_len
+        if total_len <= 0:
+            continue
+
+        # 计算步长
+        if is_closed:
+            step = total_len / num_points
+        else:
+            step = total_len / (num_points - 1) if num_points > 1 else 0
+
+        for i in range(num_points):
+            if is_closed:
+                t = i * step
+            else:
+                t = i * step if num_points > 1 else 0
+
+            if t > total_len:
+                t = total_len
+
+            # 确定所在线段
+            idx = bisect.bisect_left(cumulative, t) - 1
+            idx = max(0, min(idx, len(segments) - 1))
+
+            seg_start, seg_end, seg_len = segments[idx]
+            t_in_seg = t - cumulative[idx]
+
+            if seg_len == 0:
+                x, y = seg_start
+            else:
+                ratio = t_in_seg / seg_len
+                ratio = max(0.0, min(1.0, ratio))
+                dx = seg_end[0] - seg_start[0]
+                dy = seg_end[1] - seg_start[1]
+                x = seg_start[0] + dx * ratio
+                y = seg_start[1] + dy * ratio
+
+            angle = math.atan2(y, x)  # 求的是对于零点的坐标
+            deg = math.degrees(angle)
+            if deg < 0:
+                deg += 360
+
+            data.append({
+                "角度": deg,
+                "距离": round(math.sqrt(x ** 2 + y ** 2), 6),
+                "x坐标": round(x,6),
+                "y坐标": round(y,6),
+            })
+
+
+def compute_arc_length(v1, v2, bulge):
+    dx = v2[0] - v1[0]
+    dy = v2[1] - v1[1]
+    d = math.hypot(dx, dy)
+    theta = 4 * math.atan(abs(bulge))
+    if theta == 0:
+        return d  # 直线情况，但bulge不为0时理论上不会出现
+    arc_length = (d * theta) / (2 * math.sin(theta / 2))
+    return arc_length
+
+
+def get_arc_point(S, E, bulge, local_s, seg_length):
+    if seg_length == 0:
+        return (S[0], S[1])
+
+    dx = E[0] - S[0]
+    dy = E[1] - S[1]
+    d = math.hypot(dx, dy)
+    if d == 0:
+        return (S[0], S[1])
+
+    Mx = (S[0] + E[0]) / 2
+    My = (S[1] + E[1]) / 2
+    h_x = (-dy * bulge) / 2
+    h_y = (dx * bulge) / 2
+    Ox = Mx + h_x
+    Oy = My + h_y
+
+    r = math.hypot(S[0] - Ox, S[1] - Oy)
+    if r == 0:
+        return (S[0], S[1])
+
+    angle_S = math.atan2(S[1] - Oy, S[0] - Ox)
+    theta = 4 * math.atan(bulge)
+
+    delta_theta = (local_s / seg_length) * theta
+    current_angle = angle_S + delta_theta
+
+    x = Ox + r * math.cos(current_angle)
+    y = Oy + r * math.sin(current_angle)
+    return (x, y)
+
+
+def sample_lwpolyline(pline, num_points):
+    vertices = list(pline.get_points('xyb'))
+    is_closed = pline.closed
+    segments = []
+    total_length = 0.0
+
+    for i in range(len(vertices) - 1):
+        v1 = vertices[i]
+        v2 = vertices[i + 1]
+        bulge = v1[2]
+        start = (v1[0], v1[1])
+        end = (v2[0], v2[1])
+        if bulge == 0:
+            seg_type = 'line'
+            length = math.hypot(end[0] - start[0], end[1] - start[1])
+        else:
+            seg_type = 'arc'
+            length = compute_arc_length(v1, v2, bulge)
+        segments.append({
+            'type': seg_type,
+            'start': start,
+            'end': end,
+            'bulge': bulge,
+            'start_length': total_length,
+            'end_length': total_length + length,
+            'length': length
         })
+        total_length += length
 
-#多边形polyline的辅助函数，计算角度
-def calculate_angle(center_x, center_y, point):
-    point_x, point_y = point
-    radians = math.atan2(point_y - center_y, point_x - center_x)
-    degrees = math.degrees(radians)  # 转换为度
-    return degrees
+    if is_closed and len(vertices) > 1:
+        v1 = vertices[-1]
+        v2 = vertices[0]
+        bulge = v1[2]
+        start = (v1[0], v1[1])
+        end = (v2[0], v2[1])
+        if bulge == 0:
+            seg_type = 'line'
+            length = math.hypot(end[0] - start[0], end[1] - start[1])
+        else:
+            seg_type = 'arc'
+            length = compute_arc_length(v1, v2, bulge)
+        segments.append({
+            'type': seg_type,
+            'start': start,
+            'end': end,
+            'bulge': bulge,
+            'start_length': total_length,
+            'end_length': total_length + length,
+            'length': length
+        })
+        total_length += length
 
-def shape_polyline(data,entity):
-    #计算多边形的中心点
-    x_coords = []
-    y_coords = []
+    if total_length == 0 or num_points == 0:
+        return []
 
-    for vertex in entity.vertices():
-        x_coords.append(vertex.dxf.x)
-        y_coords.append(vertex.dxf.y)
+    if num_points == 1:
+        s_list = [total_length * 0.5]
+    else:
+        s_list = [i * (total_length / (num_points - 1)) for i in range(num_points)]
 
-    center_x = sum(x_coords) / len(x_coords)
-    center_y = sum(y_coords) / len(y_coords)
+    sampled_points = []
+    for s in s_list:
+        if s >= total_length:
+            last_seg = segments[-1]
+            sampled_points.append(last_seg['end'])
+            continue
+        for seg in segments:
+            if seg['start_length'] <= s < seg['end_length']:
+                local_s = s - seg['start_length']
+                if seg['type'] == 'line':
+                    t = local_s / seg['length'] if seg['length'] != 0 else 0.0
+                    x = seg['start'][0] + t * (seg['end'][0] - seg['start'][0])
+                    y = seg['start'][1] + t * (seg['end'][1] - seg['start'][1])
+                else:
+                    x, y = get_arc_point(seg['start'], seg['end'], seg['bulge'], local_s, seg['length'])
+                sampled_points.append((x, y))
+                break
+        else:
+            if s == total_length:
+                last_seg = segments[-1]
+                sampled_points.append(last_seg['end'])
+    return sampled_points
+
+def shape_lwpolyline(msp, data,pointNum):
+    lwpolylines = [entity for entity in msp if entity.dxftype() == 'LWPOLYLINE']
+    polyline_lengths = []
+    total_length = 0.0
+
+    for pline in lwpolylines:
+        length = 0.0
+        vertices = list(pline.get_points('xyb'))
+        for i in range(len(vertices) - 1):
+            v1 = vertices[i]
+            v2 = vertices[i + 1]
+            bulge = v1[2]
+            if bulge == 0:
+                dx = v2[0] - v1[0]
+                dy = v2[1] - v1[1]
+                segment_length = math.hypot(dx, dy)
+            else:
+                segment_length = compute_arc_length(v1, v2, bulge)
+            length += segment_length
+        if pline.closed and len(vertices) > 1:
+            v1 = vertices[-1]
+            v2 = vertices[0]
+            bulge = v1[2]
+            if bulge == 0:
+                dx = v2[0] - v1[0]
+                dy = v2[1] - v1[1]
+                segment_length = math.hypot(dx, dy)
+            else:
+                segment_length = compute_arc_length(v1, v2, bulge)
+            length += segment_length
+        polyline_lengths.append((pline, length))
+        total_length += length
+
+    if total_length == 0 or not lwpolylines:
+        return []
 
     points = []
+    for pline, length in polyline_lengths:
+        ratio = length / total_length
+        num = int(round(pointNum * ratio))
+        if num <= 0:
+            continue
+        sampled = sample_lwpolyline(pline, num)
+        points.extend(sampled)
 
-    # 计算多边形的弧长并均匀分配
-    length = 0
-    segments = []
+    if len(points) > pointNum:
+        points = points[:pointNum]
 
-    # 计算每条边的长度
-    vertices = list(entity.vertices())
-    vertex_count = len(vertices)
-
-    for i in range(vertex_count):
-        current_vertex = vertices[i]
-        next_vertex = vertices[(i + 1) % vertex_count]  # 保持循环访问
-
-        edge_length = math.sqrt((next_vertex.dxf.x - current_vertex.dxf.x) ** 2 +
-                                (next_vertex.dxf.y - current_vertex.dxf.y) ** 2)
-        segments.append(edge_length)
-        length += edge_length
-
-    # 计算360个均匀分布的点(按周长去)
-    point_count = 360
-    segment_proportion = length / point_count
-
-    current_length = 0
-    segment_index = 0
-
-    for i in range(point_count):
-        while current_length + segments[segment_index] < (i + 1) * segment_proportion:
-            current_length += segments[segment_index]
-            segment_index = (segment_index + 1) % vertex_count
-
-        # 计算插值点
-        ratio = ((i + 1) * segment_proportion - current_length) / segments[segment_index]
-        vertex_a = vertices[segment_index]
-        next_vertex = vertices[(segment_index + 1) % vertex_count]
-
-        p_x = (1 - ratio) * vertex_a.dxf.x + ratio * next_vertex.dxf.x
-        p_y = (1 - ratio) * vertex_a.dxf.y + ratio * next_vertex.dxf.y
-        points.append((p_x, p_y))
-
-    # 计算每个点与中心点的角度
     for point in points:
-        #各个点对于多边形中心点的角度
-        angle = calculate_angle(center_x,center_y, point)
-        #各个点对于多边形中心点的距离
-        distance = math.sqrt((point[0] - center_x) ** 2 + (point[1] - center_y) ** 2)
+        x, y = point[0], point[1]
+        angle = math.atan2(y, x)  # 求的是对于零点的坐标
+        deg = math.degrees(angle)
+        if deg < 0:
+            deg += 360
+
         data.append({
-            "角度": angle,
-            "距离": round(angle, 6),
-            "x坐标": round(point[0]),
-            "y坐标": round(point[1]),
+            "零点角度":deg,
+            "零点距离":round(math.sqrt(x ** 2 + y ** 2),6),
+            "x坐标": round(x, 6),
+            "y坐标": round(y, 6),
         })
-
-def shape_lwpolyline(msp, data):
-    # 提取 LWPOLYLINE 顶点数据
-    vertices = []
-    for lwpolyline in msp.query('LWPOLYLINE'):  # 查找所有 LWPOLYLINE 实体
-        for vertex in lwpolyline.vertices():  # 获取每个顶点的坐标
-            vertices.append((vertex[0], vertex[1]))
-
-    # 计算两个点之间的角度（与中心点的角度）
-    def get_angle(center, point):
-        dx = point[0] - center[0]
-        dy = point[1] - center[1]
-        angle = math.degrees(math.atan2(dy, dx))  # 计算角度
-        return angle
-
-    # 计算两个点之间的距离
-    def get_distance(center, point):
-        return math.sqrt((point[0] - center[0]) ** 2 + (point[1] - center[1]) ** 2)
-
-    # 获取所有的 LWPOLYLINE 或 POLYLINE
-    polylines = msp.query('LWPOLYLINE')
-
-    # 遍历所有多段线
-    for polyline in polylines:
-        points = []
-
-        # 获取顶点坐标
-        for vertex in polyline.vertices():
-            points.append((vertex[0], vertex[1]))  # 获取 (x, y) 坐标
-
-        # 计算中心点（质心）
-        center_x = sum(p[0] for p in points) / len(points)
-        center_y = sum(p[1] for p in points) / len(points)
-        center = (center_x, center_y)
-
-        # 如果多段线是开口的，那么角度计算会基于每个点与中心点的角度
-        for point in points:
-            angle = get_angle(center, point)
-            distance = get_distance(center, point)
-            data.append({
-                "角度": angle,
-                "距离": round(distance, 6),
-                "x坐标": round(point[0], 6),
-                "y坐标": round(point[1], 6),
-            })
 
 
 def my_angle(x,y):
@@ -320,7 +609,7 @@ def my_angle(x,y):
     return angle_deg, length
 
 
-def spline_data(ctrl_pts,degree):
+def spline_data(ctrl_pts,degree,num):
     # 假设为3次开放均匀B样条
     #degree = 3
     n = len(ctrl_pts)
@@ -340,18 +629,16 @@ def spline_data(ctrl_pts,degree):
     cumulative_length = np.insert(np.cumsum(distances), 0, 0)
     total_length = cumulative_length[-1]
 
-    s_positions = np.linspace(0, total_length, 90)
+    s_positions = np.linspace(0, total_length, num)
     t_of_s = interp1d(cumulative_length, t_dense, kind='linear')(s_positions)
     uniform_points = spline(t_of_s)
     return uniform_points
 
-def shape_spline(dxf_path, data):
+def shape_spline(dxf_path, data,pointNum):
     doc = ezdxf.readfile(dxf_path)
     msp = doc.modelspace()
     splines = msp.query('SPLINE')
-    print("test331")
-
-    datas = []
+    num = len(splines)
 
     # 遍历每个SPLINE并处理控制点
     control_points_list = []
@@ -361,19 +648,19 @@ def shape_spline(dxf_path, data):
         # 转换为NumPy数组
         ctrl_pts = np.array(points)
         degree = spline.dxf.degree
-        uniform_points = spline_data(ctrl_pts, degree)
+        uniform_points = spline_data(ctrl_pts, degree,int(pointNum / num))
         for uniform_point in uniform_points:
             x = uniform_point[0]
             y = uniform_point[1]
             angle_deg, length = my_angle(x, y)
-            datas.append({
+            data.append({
                 "角度": angle_deg,
                 "距离": length,
                 "x坐标": x,
                 "y坐标": y,
             })
 
-    data = sorted(data, key=lambda item: item["角度"])
+    data.sort(key=lambda item: item["角度"])
 
 def shape_composite(msp, data):
     points = []

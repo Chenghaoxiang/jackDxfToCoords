@@ -174,8 +174,8 @@ class MyWindow(QWidget):
             returnId = export_shape_polar_to_excel(shape, filepath, output_file,pointNum)
 
             if returnId < 0:
-                ShapeErrorid = -returnId;
-                ShapeErrorName = SHAPE(ShapeErrorid);
+                ShapeErrorid = -returnId
+                ShapeErrorName = SHAPE(ShapeErrorid)
                 QMessageBox.critical(
                     self,
                     '操作失败',
